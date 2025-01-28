@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
 
                 /* https://www.youtube.com/watch?v=jt5sJEnDsSQ used as a guide, structure was followed closely but not exactly and
-                adapted to fit the app structure i built */
+                adapted to fit the app structure i built. The android dev pages were also used as guidance, but less than the video */
                 NavHost(
                     navController = navController,
                     startDestination = Chat
