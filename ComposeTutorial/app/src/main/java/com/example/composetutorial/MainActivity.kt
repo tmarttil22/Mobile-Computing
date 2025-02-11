@@ -1,9 +1,16 @@
 package com.example.composetutorial
 
+import android.app.Application
+import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 //import androidx.activity.enableEdgeToEdge
@@ -27,44 +34,55 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.room.Room
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import com.example.composetutorial.data.Picture
+import com.example.composetutorial.data.User
+import com.example.composetutorial.data.UserDatabase
+import com.example.composetutorial.data.UserRepository
 import com.example.composetutorial.ui.theme.ComposeTutorialTheme
 import kotlinx.serialization.Serializable
 
 class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
+
+    /* val db = Room.databaseBuilder(
+        applicationContext,
+        UserDatabase::class.java, "database-name"
+    ).build() */
+
+
+    private val userViewModel: UserViewModel by viewModels {
+        UserViewModelFactory(UserRepository(UserDatabase.getDataBase(this).userDao()))
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {//
         super.onCreate(savedInstanceState)
-        // Message("", "")
-        val messageList: List<Message> = listOf(Message("Pearson","I really really like milk"),
-            Message("Milk_lover_4", "I love milk WAY more than you!!!"),
-            Message("Pearson", "It's not a competition man :))"),
-            Message("Pepsi fanatic", "DRINK PEPSI GUYS, its clearly the most superior option since the taste is so heavenful. You might almost think that it's gods most preferred drink."),
-            Message("Pearson", "Pepsi max > Pepsi"),
-            Message("Milk_lover_4", "blasphemous thread, shame on you"),
-            Message("EldenRingFan16", "Yo is the Bloodhound Fang a good weapon??"),
-            Message("Pearson", "Wrong thread buddy boy but yeah its solid"),
-            Message("FordF150", "I mean this COULD be made into an elden ring thread, why not"),
-            Message("Milk_lover_4", "ABSOLUTELY NOT, THIS IS FOR MILK ONLY"),
-            Message("Pearson", "I could honestly switch convo this to elden ring too"),
-            Message("Pearson", "Have any of you beat Malenia?"),
-            Message("EldenRingFan16", "I haven't got to that point in the game yet"),
-            Message("FordF150", "Oh yeah i beat him after maybe 3 hours, that fight is TOUGH"),
-            Message("Milk_Lover_4", "Is there milk in elden ring"),
-            Message("Pepsi fanatic", "Is there pepsi in elden ring??"),
-            Message("Pearson", "Theres different types of drinks, is it good enough??"))
+
+        val database = UserDatabase.getDataBase(this)
+        val userDao = database.userDao()
+        val repo = UserRepository(database.userDao())
+        val viewModelFactory = UserViewModelFactory(repo)
 
         setContent {
             ComposeTutorialTheme {
@@ -78,23 +96,28 @@ class MainActivity : ComponentActivity() {
                 ) {
                     composable<Profile> {
                         ProfileScreen(
-                            onNavigateToChat = { navController.navigate(route = Chat)
-                            {
-                                popUpTo(route = Chat) {
-                                    inclusive = true
+                            onNavigateToChat = {
+                                navController.navigate(route = Chat)
+                                {
+                                    popUpTo(route = Chat) {
+                                        inclusive = true
+                                    }
                                 }
-                            }
-                            }, onNavigateToPrivateMessage = {navController.navigate(route = PrivateMessage)
-                            {
-                                popUpTo(route = PrivateMessage) {
-                                    inclusive = true
+                            }, onNavigateToPrivateMessage = {
+                                navController.navigate(route = PrivateMessage)
+                                {
+                                    popUpTo(route = PrivateMessage) {
+                                        inclusive = true
+                                    }
                                 }
-                            }}
+                            }, userViewModel = userViewModel
                         )
                     }
                     composable<Chat> {
                         ChatScreen(
-                            onNavigateToProfile = {navController.navigate(route = Profile)}
+                            onNavigateToProfile = {navController.navigate(route = Profile)
+                            }, userViewModel = userViewModel
+
                         )
                     }
                     composable<PrivateMessage> {
@@ -112,7 +135,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-data class Message(val author: String, val body: String)
+data class Message(val author: String?, val body: String)
 
 @Serializable
 object Profile
@@ -122,25 +145,60 @@ object Chat
 object PrivateMessage
 
 @Composable
-fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -> Unit) {
+fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -> Unit, userViewModel: UserViewModel) {
+
+    val picture by userViewModel.pictureFlow.collectAsState()
+    var userString by remember { mutableStateOf("Pearson") }
+    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+
+        // Callback is invoked after the user selects a media item or closes the
+        // photo picker.
+        if (uri != null) {
+            Log.d("PhotoPicker", "Selected URI: $uri")
+            userViewModel.insertPicture(Picture(uid = 1, profileImage = uri.toString()))
+        } else {
+            Log.d("PhotoPicker", "No media selected")
+        }
+    }
+
     Row(modifier = Modifier.padding(all = 14.dp)) {
-        Image(
-            painter = painterResource(R.drawable.milk_glass),
-            contentDescription = "A mighty glass of milk",
+
+        AsyncImage(
+            model = picture?.profileImage,
+            contentDescription = "Profile picture",
             modifier = Modifier.size(100.dp)
                 .clip(CircleShape)
-                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
         )
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.fillMaxWidth()) {
             Spacer(modifier = Modifier.height(14.dp))
-            Text(text = "/*Username placeholder*/", color = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.height(26.dp))
-            Text(text = "/*Bio placeholder*/", color = MaterialTheme.colorScheme.secondary)
+
+            TextField(
+                value = userString,
+                onValueChange = {userString = it},
+                label = { Text("Username")}
+            )
+            userViewModel.insertUser(User(uid = 1, username = userString))
+
+
+            Spacer(modifier = Modifier.height(13.dp))
 
             Spacer(modifier = Modifier.height(14.dp))
             FilledTonalButton(onClick = onNavigateToPrivateMessage) {
                 Text(text = "Open account settings")
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            FilledTonalButton(onClick = {
+                pickMedia.launch(PickVisualMediaRequest(
+                    ActivityResultContracts.PickVisualMedia.ImageOnly
+                ))
+
+            }
+            )
+            {
+                Text(text = "Pick profile picture")
             }
         }
     }
@@ -156,26 +214,29 @@ fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -
 }
 
 @Composable
-fun ChatScreen(onNavigateToProfile: () -> Unit) {
-    val messageList: List<Message> = listOf(Message("Pearson","I really really like milk"),
+fun ChatScreen(onNavigateToProfile: () -> Unit, userViewModel: UserViewModel) {
+    val user by userViewModel.userFlow.collectAsState()
+
+    val messageList: List<Message> = listOf(Message(user?.username,"I really really like milk"),
         Message("Milk_lover_4", "I love milk WAY more than you!!!"),
-        Message("Pearson", "It's not a competition man :))"),
+        Message(user?.username, "It's not a competition man :))"),
         Message("Pepsi fanatic", "DRINK PEPSI GUYS, its clearly the most superior option since the taste is so heavenful. You might almost think that it's gods most preferred drink."),
-        Message("Pearson", "Pepsi max > Pepsi"),
+        Message(user?.username, "Pepsi max > Pepsi"),
         Message("Milk_lover_4", "blasphemous thread, shame on you"),
         Message("EldenRingFan16", "Yo is the Bloodhound Fang a good weapon??"),
-        Message("Pearson", "Wrong thread buddy boy but yeah its solid"),
+        Message(user?.username, "Wrong thread buddy boy but yeah its solid"),
         Message("FordF150", "I mean this COULD be made into an elden ring thread, why not"),
         Message("Milk_lover_4", "ABSOLUTELY NOT, THIS IS FOR MILK ONLY"),
-        Message("Pearson", "I could honestly switch convo this to elden ring too"),
-        Message("Pearson", "Have any of you beat Malenia?"),
+        Message(user?.username, "I could honestly switch convo this to elden ring too"),
+        Message(user?.username, "Have any of you beat Malenia?"),
         Message("EldenRingFan16", "I haven't got to that point in the game yet"),
         Message("FordF150", "Oh yeah i beat him after maybe 3 hours, that fight is TOUGH"),
         Message("Milk_Lover_4", "Is there milk in elden ring"),
         Message("Pepsi fanatic", "Is there pepsi in elden ring??"),
-        Message("Pearson", "Theres different types of drinks, is it good enough??"))
+        Message(user?.username, "Theres different types of drinks, is it good enough??"),
+        )
 
-    Conversation(messageList)
+    Conversation(messageList, userViewModel = userViewModel)
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.align(Alignment.TopEnd)) {
@@ -203,17 +264,31 @@ fun PrivateMessageScreen(onNavigateToProfile: () -> Unit) {
 }
 
 @Composable
-fun MessageCard(msg: Message) {
+fun MessageCard(msg: Message, userViewModel: UserViewModel) {
     Row(modifier = Modifier.padding(all = 8.dp)) {
-        Image(
+        /* Image(
             painter = painterResource(R.drawable.milk_glass),
             contentDescription = "A mighty glass of milk",
             modifier = Modifier.size(40.dp)
                 .clip(CircleShape)
                 .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
+        ) */
+
+        val picture by userViewModel.pictureFlow.collectAsState()
+
+        AsyncImage(
+            //model = picture?.profileImage,
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(picture?.profileImage)
+                .build(),
+            contentDescription = "does this matter",
+            modifier = Modifier.size(40.dp)
+                .clip(CircleShape)
+                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
+            placeholder = painterResource(R.drawable.milk_glass)
         )
 
-        Spacer(modifier = Modifier.width(8.dp))
+         Spacer(modifier = Modifier.width(8.dp))
 
         var isExpanded by remember { mutableStateOf(false) }
 
@@ -223,10 +298,10 @@ fun MessageCard(msg: Message) {
         )
 
         Column(modifier = Modifier.clickable { isExpanded = !isExpanded }) {
-            Text(text = msg.author
-                , color = MaterialTheme.colorScheme.secondary
-                , style = MaterialTheme.typography.titleSmall
-            )
+            msg.author?.let {
+                Text(text = it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.titleSmall
+                )
+            }
             Spacer(modifier = Modifier.height(2.dp))
 
             Surface(shape = MaterialTheme.shapes.medium,
@@ -245,10 +320,10 @@ fun MessageCard(msg: Message) {
 }
 
 @Composable
-fun Conversation(messages: List<Message>) {
+fun Conversation(messages: List<Message>, userViewModel: UserViewModel) {
     LazyColumn {
         items(messages) {
-            message -> MessageCard(message)
+            message -> MessageCard(message, userViewModel)
         }
     }
 }
@@ -265,7 +340,7 @@ fun Conversation(messages: List<Message>) {
 fun PreviewMessageCard() {
     ComposeTutorialTheme {
         Surface {
-            MessageCard(msg = Message("Lexi", "Hey, take a look at Jetpack Compose, it's great!"))
+            //MessageCard(msg = Message("Lexi", "Hey, take a look at Jetpack Compose, it's great!"))
         }
     }
 }
