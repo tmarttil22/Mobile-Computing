@@ -1,10 +1,19 @@
 package com.example.composetutorial
 
-import android.app.Application
+//import androidx.activity.enableEdgeToEdge
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.widget.Button
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -13,8 +22,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
-//import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -30,13 +37,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.*
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,17 +48,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.room.Room
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import com.example.composetutorial.data.Picture
@@ -62,15 +66,13 @@ import com.example.composetutorial.data.User
 import com.example.composetutorial.data.UserDatabase
 import com.example.composetutorial.data.UserRepository
 import com.example.composetutorial.ui.theme.ComposeTutorialTheme
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.Serializable
+//import androidx.hilt.navigation.compose.hiltViewModel
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-
-    /* val db = Room.databaseBuilder(
-        applicationContext,
-        UserDatabase::class.java, "database-name"
-    ).build() */
-
+    private lateinit var notificationService: NotificationService
 
     private val userViewModel: UserViewModel by viewModels {
         UserViewModelFactory(UserRepository(UserDatabase.getDataBase(this).userDao()))
@@ -79,14 +81,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {//
         super.onCreate(savedInstanceState)
 
+        notificationService = NotificationService(this)
+
         val database = UserDatabase.getDataBase(this)
         val userDao = database.userDao()
         val repo = UserRepository(database.userDao())
         val viewModelFactory = UserViewModelFactory(repo)
 
         setContent {
+
             ComposeTutorialTheme {
                 val navController = rememberNavController()
+
 
                 /* https://www.youtube.com/watch?v=jt5sJEnDsSQ used as a guide, structure was followed closely but not exactly and
                 adapted to fit the app structure i built. The android dev pages were also used as guidance, but less than the video */
@@ -104,13 +110,15 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }, onNavigateToPrivateMessage = {
-                                navController.navigate(route = PrivateMessage)
+                                navController.navigate(route = SensorData)
                                 {
-                                    popUpTo(route = PrivateMessage) {
+                                    popUpTo(route = SensorData) {
                                         inclusive = true
                                     }
                                 }
-                            }, userViewModel = userViewModel
+                            }, userViewModel = userViewModel,
+                            onRequestPermission = { checkAndRequestNotificationPermission() },
+                            onSendNotification = { sendNotification() }
                         )
                     }
                     composable<Chat> {
@@ -120,8 +128,8 @@ class MainActivity : ComponentActivity() {
 
                         )
                     }
-                    composable<PrivateMessage> {
-                        PrivateMessageScreen(
+                    composable<SensorData> {
+                        SensorDataScreen(
                             onNavigateToProfile = {navController.navigate(route = Profile)
                             {
                                 popUpTo(route = Profile) {
@@ -137,15 +145,17 @@ class MainActivity : ComponentActivity() {
 
 data class Message(val author: String?, val body: String)
 
+
 @Serializable
 object Profile
 @Serializable
 object Chat
 @Serializable
-object PrivateMessage
+object SensorData
 
 @Composable
-fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -> Unit, userViewModel: UserViewModel) {
+fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -> Unit, userViewModel: UserViewModel,
+                  onRequestPermission: () -> Unit, onSendNotification: () -> Unit) {
 
     val picture by userViewModel.pictureFlow.collectAsState()
     var userString by remember { mutableStateOf("Pearson") }
@@ -166,7 +176,8 @@ fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -
         AsyncImage(
             model = picture?.profileImage,
             contentDescription = "Profile picture",
-            modifier = Modifier.size(100.dp)
+            modifier = Modifier
+                .size(100.dp)
                 .clip(CircleShape)
                 .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
         )
@@ -186,7 +197,7 @@ fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -
 
             Spacer(modifier = Modifier.height(14.dp))
             FilledTonalButton(onClick = onNavigateToPrivateMessage) {
-                Text(text = "Open account settings")
+                Text(text = "Observe sensor data")
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -199,6 +210,11 @@ fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -
             )
             {
                 Text(text = "Pick profile picture")
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            FilledTonalButton(onClick = { onSendNotification(); sendNotification(); onRequestPermission() }
+            ) {
+                Text(text = "Apply notifications")
             }
         }
     }
@@ -217,10 +233,14 @@ fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -
 fun ChatScreen(onNavigateToProfile: () -> Unit, userViewModel: UserViewModel) {
     val user by userViewModel.userFlow.collectAsState()
 
-    val messageList: List<Message> = listOf(Message(user?.username,"I really really like milk"),
+    val messageList: List<Message> = listOf(
+        Message(user?.username, "I really really like milk"),
         Message("Milk_lover_4", "I love milk WAY more than you!!!"),
         Message(user?.username, "It's not a competition man :))"),
-        Message("Pepsi fanatic", "DRINK PEPSI GUYS, its clearly the most superior option since the taste is so heavenful. You might almost think that it's gods most preferred drink."),
+        Message(
+            "Pepsi fanatic",
+            "DRINK PEPSI GUYS, its clearly the most superior option since the taste is so heavenful. You might almost think that it's gods most preferred drink."
+        ),
         Message(user?.username, "Pepsi max > Pepsi"),
         Message("Milk_lover_4", "blasphemous thread, shame on you"),
         Message("EldenRingFan16", "Yo is the Bloodhound Fang a good weapon??"),
@@ -234,7 +254,7 @@ fun ChatScreen(onNavigateToProfile: () -> Unit, userViewModel: UserViewModel) {
         Message("Milk_Lover_4", "Is there milk in elden ring"),
         Message("Pepsi fanatic", "Is there pepsi in elden ring??"),
         Message(user?.username, "Theres different types of drinks, is it good enough??"),
-        )
+    )
 
     Conversation(messageList, userViewModel = userViewModel)
 
@@ -247,21 +267,53 @@ fun ChatScreen(onNavigateToProfile: () -> Unit, userViewModel: UserViewModel) {
     }
 }
 
-@Composable
-fun PrivateMessageScreen(onNavigateToProfile: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.align(Alignment.TopEnd)) {
-            Button(onClick = onNavigateToProfile) {
-                Text(text = "Return to profile")
+    @Composable
+    fun SensorDataScreen(onNavigateToProfile: () -> Unit) {
+        //val sensorViewModel = hiltViewModel<SensorViewModel>()
+        //val sensorViewModel: SensorViewModel = hiltViewModel()
+        val sensorViewModel: SensorViewModel by viewModels()
+        val gyroData by sensorViewModel.gyroData.collectAsState()
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.align(Alignment.TopEnd)) {
+                Button(onClick = onNavigateToProfile) {
+                    Text(text = "Return to profile")
+                }
+            }
+        }
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.align(Alignment.Center)) {
+                if (gyroData.isNotEmpty()) {
+                    Text(text = "X-Axis: " + gyroData[0].toString() + "\n"
+                            + "Y-Axis: " + gyroData[1].toString() + "\n"
+                            + "Z-Axis: " + gyroData[2].toString() + "\n")
+                }
             }
         }
     }
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.align(Alignment.Center)) {
-            Text(text = "No implementation")
+
+    private fun checkAndRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                sendNotification()
+            }
+        } else {
+            sendNotification()
         }
     }
-}
+
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (isGranted) {
+                sendNotification()
+            }
+        }
+
+    private fun sendNotification() {
+        notificationService.showNotification()
+    }
 
 @Composable
 fun MessageCard(msg: Message, userViewModel: UserViewModel) {
@@ -282,7 +334,8 @@ fun MessageCard(msg: Message, userViewModel: UserViewModel) {
                 .data(picture?.profileImage)
                 .build(),
             contentDescription = "does this matter",
-            modifier = Modifier.size(40.dp)
+            modifier = Modifier
+                .size(40.dp)
                 .clip(CircleShape)
                 .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
             placeholder = painterResource(R.drawable.milk_glass)
@@ -307,7 +360,9 @@ fun MessageCard(msg: Message, userViewModel: UserViewModel) {
             Surface(shape = MaterialTheme.shapes.medium,
                 shadowElevation = 1.dp,
                 color = surfaceColor,
-                modifier = Modifier.animateContentSize().padding(1.dp)) {
+                modifier = Modifier
+                    .animateContentSize()
+                    .padding(1.dp)) {
 
                 Text(text = msg.body
                     , style = MaterialTheme.typography.bodySmall

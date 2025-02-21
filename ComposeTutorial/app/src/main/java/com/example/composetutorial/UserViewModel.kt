@@ -6,15 +6,20 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.composetutorial.Sensor.GyroScope
+import com.example.composetutorial.Sensor.GyroSensor
 import com.example.composetutorial.data.Picture
 import com.example.composetutorial.data.User
 import com.example.composetutorial.data.UserRepository
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class UserViewModel(private val userRepository: UserRepository) : ViewModel() {
+
+class UserViewModel (val userRepository: UserRepository) : ViewModel() {
     private val _user = mutableStateOf<User?>(null)
     val user: State<User?> = _user
 
@@ -46,7 +51,6 @@ class UserViewModel(private val userRepository: UserRepository) : ViewModel() {
             userRepository.updateUser(user)
         }
     }
-    //fun getUser(): StateFlow<User?> = userFlow
 
     val pictureFlow: StateFlow<Picture?> = userRepository.getPicture()
         .stateIn(viewModelScope, SharingStarted.Lazily, null)
