@@ -17,6 +17,12 @@ class UserRepository (private val userDao: UserDao){
         }
     }
 
+    suspend fun insertMessage(message: Msg) {
+        withContext(Dispatchers.IO) {
+            userDao.insertMessage(message)
+        }
+    }
+
     suspend fun updateUser(user: User) {
         withContext(Dispatchers.IO) {
             userDao.updateUser(user)
@@ -32,4 +38,6 @@ class UserRepository (private val userDao: UserDao){
     fun getUser(): Flow<User?> = userDao.getUser()
     fun getPicture(): Flow<Picture?> = userDao.getPicture()
 
+    fun getMessage(): Flow<Msg?> = userDao.getMessage()
+    fun getAllMessages(): Flow<List<Msg?>> = userDao.getAllMessages()
 }

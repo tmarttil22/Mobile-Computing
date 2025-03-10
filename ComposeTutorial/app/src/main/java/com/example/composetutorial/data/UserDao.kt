@@ -17,11 +17,17 @@ interface UserDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPicture (picture: Picture)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMessage (message: Msg)
+
     @Query("Select * FROM User ORDER BY uid DESC LIMIT 1")
     fun getUser(): Flow<User?>
 
     @Query("Select * FROM Picture ORDER BY uid DESC LIMIT 1")
     fun getPicture(): Flow<Picture?>
+
+    @Query("Select * FROM Message ORDER BY uid DESC LIMIT 1")
+    fun getMessage(): Flow<Msg?>
 
     @Update
     suspend fun updateUser (user: User)
@@ -34,4 +40,7 @@ interface UserDao {
 
     @Query("Select * FROM User")
     fun getAll(): List<User>
+
+    @Query("Select * FROM Message")
+    fun getAllMessages(): Flow<List<Msg>>
 }

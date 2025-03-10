@@ -14,3 +14,9 @@ data class Picture (
     @PrimaryKey (autoGenerate = true) val uid: Int = 0,
     val profileImage: String
 )
+
+@Entity(tableName = "Message")
+data class Msg (
+    @PrimaryKey (autoGenerate = true) val uid: Int = 0,
+    val msg: String
+)

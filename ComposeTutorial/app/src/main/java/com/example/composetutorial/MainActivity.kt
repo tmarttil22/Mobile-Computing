@@ -1,6 +1,5 @@
 package com.example.composetutorial
 
-//import androidx.activity.enableEdgeToEdge
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
@@ -13,6 +12,16 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+
+// API imports
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.create
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
+
+import kotlinx.coroutines.runBlocking
 import android.widget.Button
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,8 +31,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,14 +50,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.AlignmentLine
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -60,7 +74,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import coil3.compose.AsyncImage
+import coil3.compose.rememberAsyncImagePainter
+import coil3.request.CachePolicy
 import coil3.request.ImageRequest
+import coil3.request.crossfade
+import com.example.composetutorial.data.Msg
 import com.example.composetutorial.data.Picture
 import com.example.composetutorial.data.User
 import com.example.composetutorial.data.UserDatabase
@@ -68,7 +86,6 @@ import com.example.composetutorial.data.UserRepository
 import com.example.composetutorial.ui.theme.ComposeTutorialTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.Serializable
-//import androidx.hilt.navigation.compose.hiltViewModel
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -92,7 +109,6 @@ class MainActivity : ComponentActivity() {
 
             ComposeTutorialTheme {
                 val navController = rememberNavController()
-
 
                 /* https://www.youtube.com/watch?v=jt5sJEnDsSQ used as a guide, structure was followed closely but not exactly and
                 adapted to fit the app structure i built. The android dev pages were also used as guidance, but less than the video */
@@ -118,7 +134,6 @@ class MainActivity : ComponentActivity() {
                                 }
                             }, userViewModel = userViewModel,
                             onRequestPermission = { checkAndRequestNotificationPermission() },
-                            onSendNotification = { sendNotification() }
                         )
                     }
                     composable<Chat> {
@@ -155,14 +170,15 @@ object SensorData
 
 @Composable
 fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -> Unit, userViewModel: UserViewModel,
-                  onRequestPermission: () -> Unit, onSendNotification: () -> Unit) {
+                  onRequestPermission: () -> Unit, apiViewModel: APIViewModel = viewModel()
+) {
 
     val picture by userViewModel.pictureFlow.collectAsState()
-    var userString by remember { mutableStateOf("Pearson") }
+    val username by userViewModel.userFlow.collectAsState()
+    var userString by remember { mutableStateOf(username?.username) }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
 
-        // Callback is invoked after the user selects a media item or closes the
-        // photo picker.
+        // Callback is invoked after the user selects a media item or closes the photo picker.
         if (uri != null) {
             Log.d("PhotoPicker", "Selected URI: $uri")
             userViewModel.insertPicture(Picture(uid = 1, profileImage = uri.toString()))
@@ -170,6 +186,9 @@ fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -
             Log.d("PhotoPicker", "No media selected")
         }
     }
+
+    val dogViewModel: APIViewModel by viewModels()
+
 
     Row(modifier = Modifier.padding(all = 14.dp)) {
 
@@ -185,12 +204,18 @@ fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -
         Column(modifier = Modifier.fillMaxWidth()) {
             Spacer(modifier = Modifier.height(14.dp))
 
-            TextField(
-                value = userString,
-                onValueChange = {userString = it},
-                label = { Text("Username")}
-            )
-            userViewModel.insertUser(User(uid = 1, username = userString))
+            if (userString == null) {
+                userString = "Pearson"
+            }
+
+            userString?.let {
+                TextField(
+                    value = it,
+                    onValueChange = {userString = it},
+                    label = { Text("Username")}
+                )
+            }
+            userString?.let { User(uid = 1, username = it) }?.let { userViewModel.insertUser(it) }
 
 
             Spacer(modifier = Modifier.height(13.dp))
@@ -212,28 +237,58 @@ fun ProfileScreen(onNavigateToChat: () -> Unit, onNavigateToPrivateMessage: () -
                 Text(text = "Pick profile picture")
             }
             Spacer(modifier = Modifier.height(14.dp))
-            FilledTonalButton(onClick = { onSendNotification(); sendNotification(); onRequestPermission() }
+            FilledTonalButton(onClick = {onRequestPermission() }
             ) {
                 Text(text = "Apply notifications")
             }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            FilledTonalButton(onClick = {
+                dogViewModel.fetchRandomDog()
+            }
+            ) {
+                Text(text = "Get a cat picture (API)")
+            }
         }
     }
-
+    val imageUrl by dogViewModel.dogImageUrl.collectAsState()
     Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.align(Alignment.Center)) {
+            Spacer(modifier = Modifier.height(180.dp))
+            imageUrl?.let { url ->
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(url)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Cat!",
+                    modifier = Modifier.size(300.dp)
+                )
+            }
+        }
         Column(modifier = Modifier.align(Alignment.BottomStart)) {
             Button(onClick = onNavigateToChat) {
                 Text(text = "Go back")
             }
         }
+        Column(modifier = Modifier.align(Alignment.BottomEnd)) {
+            Button(onClick = {openMapsActivity()}) {
+                Text(text = "Maps")
+            }
+        }
     }
-
 }
+
+    private fun openMapsActivity() {
+        val intent = Intent(this, MapsActivity::class.java)
+        startActivity(intent)
+    }
 
 @Composable
 fun ChatScreen(onNavigateToProfile: () -> Unit, userViewModel: UserViewModel) {
     val user by userViewModel.userFlow.collectAsState()
 
-    val messageList: List<Message> = listOf(
+    /*val messageList: List<Message> = listOf(
         Message(user?.username, "I really really like milk"),
         Message("Milk_lover_4", "I love milk WAY more than you!!!"),
         Message(user?.username, "It's not a competition man :))"),
@@ -254,9 +309,19 @@ fun ChatScreen(onNavigateToProfile: () -> Unit, userViewModel: UserViewModel) {
         Message("Milk_Lover_4", "Is there milk in elden ring"),
         Message("Pepsi fanatic", "Is there pepsi in elden ring??"),
         Message(user?.username, "Theres different types of drinks, is it good enough??"),
-    )
+    )*/
 
-    Conversation(messageList, userViewModel = userViewModel)
+    val messageList by userViewModel.messageList.collectAsState()
+
+    val mainMessageList = mutableListOf<Message>()
+
+    for (msg in messageList) {
+        if (msg != null) {
+            mainMessageList.add(Message(user?.username, msg.msg))
+        }
+    }
+
+    Conversation(mainMessageList, userViewModel = userViewModel)
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.align(Alignment.TopEnd)) {
@@ -264,13 +329,40 @@ fun ChatScreen(onNavigateToProfile: () -> Unit, userViewModel: UserViewModel) {
                 Text(text = "Open your profile")
             }
         }
+        var text by remember { mutableStateOf("") }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.Bottom,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextField(value = text,
+                    onValueChange = {text = it},
+                    modifier = Modifier.weight(0.75f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Button(
+                    onClick = {
+                        if (text.isNotBlank()) {
+                            userViewModel.insertMessage(Msg(msg = text))
+                            text = ""
+                        }
+                    }, modifier = Modifier.weight(0.25f)
+                ) {
+                    Text("Send")
+                }
+            }
+        }
     }
 }
 
     @Composable
     fun SensorDataScreen(onNavigateToProfile: () -> Unit) {
-        //val sensorViewModel = hiltViewModel<SensorViewModel>()
-        //val sensorViewModel: SensorViewModel = hiltViewModel()
         val sensorViewModel: SensorViewModel by viewModels()
         val gyroData by sensorViewModel.gyroData.collectAsState()
 
@@ -389,7 +481,6 @@ fun Conversation(messages: List<Message>, userViewModel: UserViewModel) {
     showBackground = true,
     name = "Dark Mode"
 )
-
 
 @Composable
 fun PreviewMessageCard() {

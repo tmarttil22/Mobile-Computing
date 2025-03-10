@@ -6,6 +6,7 @@ plugins {
     id("com.google.devtools.ksp")
     id("kotlin-kapt")
     id("com.google.dagger.hilt.android")
+    alias(libs.plugins.google.android.libraries.mapsplatform.secrets.gradle.plugin)
 }
 
 android {
@@ -23,7 +24,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "DOG_API_KEY", "\"${project.findProperty("DOG_API_KEY") ?: System.getenv("DOG_API_KEY") ?: ""}\"")
+        }
         release {
+            buildConfigField("String", "DOG_API_KEY", "\"${project.findProperty("DOG_API_KEY") ?: System.getenv("DOG_API_KEY") ?: ""}\"")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -40,6 +45,8 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+        viewBinding = true
     }
 }
 
@@ -48,12 +55,19 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.runtime.livedata)
 
+    // Maps SDK
+    implementation(libs.play.services.maps.v1900)
+
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation.fragment)
+    implementation(libs.play.services.maps)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.constraintlayout)
     kapt(libs.hilt.compiler)
     //kapt(libs.hilt.android.compiler)
     implementation(libs.dagger)
 
+    implementation(libs.coil.network.okhttp)
 
     // If this project uses any Kotlin source, use Kotlin Symbol Processing (KSP)
     // See Add the KSP plugin to your project
@@ -80,6 +94,10 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
+    // API calls
+    implementation(libs.retrofit)
+    implementation(libs.converter.gson)
+    implementation(libs.converter.moshi)
 
     // Jetpack Compose integration
     implementation(libs.androidx.navigation.compose)
